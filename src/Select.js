@@ -1,4 +1,4 @@
-var _ = require('underscore'),
+var _ = require('lodash'),
 	React = require('react'),
 	Input = require('react-input-autosize'),
 	classes = require('classnames'),
@@ -27,11 +27,14 @@ var Select = React.createClass({
 		searchPromptText: React.PropTypes.string,  // label to prompt for search input
 		name: React.PropTypes.string,              // field name, for hidden <input /> tag
 		onChange: React.PropTypes.func,            // onChange handler: function(newValue) {}
+		onFocus: React.PropTypes.func,             // onFocus handler: function(event) {}
+		onBlur: React.PropTypes.func,              // onBlur handler: function(event) {}
 		className: React.PropTypes.string,         // className for the outer element
 		filterOption: React.PropTypes.func,        // method to filter a single option: function(option, filterString)
 		filterOptions: React.PropTypes.func,       // method to filter the options array: function([options], filterString, [values])
 		matchPos: React.PropTypes.string,          // (any|start) match the start or entire string when filtering
-		matchProp: React.PropTypes.string,          // (any|label|value) which option property to filter on
+		matchProp: React.PropTypes.string,         // (any|label|value) which option property to filter on
+		inputProps: React.PropTypes.object,        // custom attributes for the Input (in the Select-control) e.g: {'data-foo': 'bar'}
 
 		/*
 		
@@ -63,6 +66,7 @@ var Select = React.createClass({
 			className: undefined,
 			matchPos: 'any',
 			matchProp: 'any',
+			inputProps: {},
 
 			onOptionLabelClick: undefined
 		};
@@ -249,12 +253,16 @@ var Select = React.createClass({
 		}
 	},
 
-	handleInputFocus: function() {
+	handleInputFocus: function(event) {
 		this.setState({
 			isFocused: true,
 			isOpen: this.state.isOpen || this._openAfterFocus
 		});
 		this._openAfterFocus = false;
+		
+		if (this.props.onFocus) {
+			this.props.onFocus(event);
+		}
 	},
 
 	handleInputBlur: function(event) {
@@ -265,6 +273,10 @@ var Select = React.createClass({
 				isFocused: false
 			});
 		}.bind(this), 50);
+		
+		if (this.props.onBlur) {
+			this.props.onBlur(event);
+		}
 	},
 
 	handleKeyDown: function(event) {
@@ -348,6 +360,8 @@ var Select = React.createClass({
 
 	loadAsyncOptions: function(input, state) {
 
+		var thisRequestId = this._currentRequestId = requestId++;
+
 		for (var i = 0; i <= input.length; i++) {
 			var cacheKey = input.slice(0, i);
 			if (this._optionsCache[cacheKey] && (input === cacheKey || this._optionsCache[cacheKey].complete)) {
@@ -359,8 +373,6 @@ var Select = React.createClass({
 				return;
 			}
 		}
-
-		var thisRequestId = this._currentRequestId = requestId++;
 
 		this.props.asyncOptions(input, function(err, data) {
 
@@ -394,12 +406,13 @@ var Select = React.createClass({
 			var filterOption = function(op) {
 				if (this.props.multi && _.contains(exclude, op.value)) return false;
 				if (this.props.filterOption) return this.props.filterOption.call(this, op, filterValue);
+				var valueTest = String(op.value), labelTest = String(op.label);
 				return !filterValue || (this.props.matchPos === 'start') ? (
-					(this.props.matchProp !== 'label' && op.value.toLowerCase().substr(0, filterValue.length) === filterValue) ||
-					(this.props.matchProp !== 'value' && op.label.toLowerCase().substr(0, filterValue.length) === filterValue)
+					(this.props.matchProp !== 'label' && valueTest.toLowerCase().substr(0, filterValue.length) === filterValue) ||
+					(this.props.matchProp !== 'value' && labelTest.toLowerCase().substr(0, filterValue.length) === filterValue)
 				) : (
-					(this.props.matchProp !== 'label' && op.value.toLowerCase().indexOf(filterValue.toLowerCase()) >= 0) ||
-					(this.props.matchProp !== 'value' && op.label.toLowerCase().indexOf(filterValue.toLowerCase()) >= 0)
+					(this.props.matchProp !== 'label' && valueTest.toLowerCase().indexOf(filterValue.toLowerCase()) >= 0) ||
+					(this.props.matchProp !== 'value' && labelTest.toLowerCase().indexOf(filterValue.toLowerCase()) >= 0)
 				);
 			};
 			return _.filter(options, filterOption, this);
@@ -547,21 +560,37 @@ var Select = React.createClass({
 
 		var loading = this.state.isLoading ? <span className="Select-loading" aria-hidden="true" /> : null;
 		var clear = this.props.clearable && this.state.value && !this.props.disabled ? <span className="Select-clear" title={this.props.multi ? this.props.clearAllText : this.props.clearValueText} aria-label={this.props.multi ? this.props.clearAllText : this.props.clearValueText} onMouseDown={this.clearValue} onClick={this.clearValue} dangerouslySetInnerHTML={{ __html: '&times;' }} /> : null;
-		var menu = this.state.isOpen ? <div ref="menu" onMouseDown={this.handleMouseDown} className="Select-menu">{this.buildMenu()}</div> : null;
 
-		var commonProps = {
+		var menu;
+		var menuProps;
+		if (this.state.isOpen) {
+			menuProps = {
+				ref: "menu",
+				className: "Select-menu"
+			};
+			if (this.props.multi) {
+				menuProps.onMouseDown = this.handleMouseDown;
+			}
+			menu = (
+				<div className="Select-menu-outer">
+					<div {...menuProps}>{this.buildMenu()}</div>
+				</div>
+			);
+		}
+
+		var input;
+		var inputProps = _.extend({
 			ref: 'input',
 			className: 'Select-input',
 			tabIndex: this.props.tabIndex || 0,
 			onFocus: this.handleInputFocus,
 			onBlur: this.handleInputBlur
-		};
-		var input;
-
+		}, this.props.inputProps);
+		
 		if (this.props.searchable && !this.props.disabled) {
-			input = <Input value={this.state.inputValue} onChange={this.handleInputChange} minWidth="5" {...commonProps} />;
+			input = <Input value={this.state.inputValue} onChange={this.handleInputChange} minWidth="5" {...inputProps} />;
 		} else {
-			input = <div {...commonProps}>&nbsp;</div>;
+			input = <div {...inputProps}>&nbsp;</div>;
 		}
 
 		return (
